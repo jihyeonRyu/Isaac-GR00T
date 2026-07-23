@@ -58,6 +58,41 @@ The converter:
 
 Use `--allow-incomplete` only when intentionally skipping malformed recordings. Use `--include-failed` only for diagnostics, not normal imitation learning.
 
+### Current converted dataset specification
+
+- Dataset: `/workspace/datasets/franka_parallel_groot_lerobot` (LeRobot v2.1)
+- Episodes: 374
+- Total frames: 208,268 at 15 FPS
+- Cameras: `external` and `wrist`, RGB 320×256
+- Image input: current frame only (`delta_indices=[0]`)
+- Robot state: current absolute EEF XYZ + rotation 6D and gripper width (10D total)
+- Action horizon: 40 frames, approximately 2.67 seconds at 15 FPS
+- EEF action: stored delta XYZ + delta rotvec (6D)
+- Gripper action: stored absolute `-1/1` command (1D)
+- Language: `annotation.human.action.task_description`
+- Normalization: 1st/99th-percentile min-max to `[-1, 1]`, with outlier clipping
+
+The action training target is:
+
+```text
+action[t:t+40]
+→ collect the stored delta EEF and absolute gripper values
+→ q01/q99 percentile min-max normalization
+→ diffusion action-head target
+```
+
+Synthetic-generation completion and retained training data by blue-cube count:
+
+| blue cubes | attempts | successful/retained episodes | generation success | retained frames |
+| ---: | ---: | ---: | ---: | ---: |
+| 1 | 161 | 161 | 100.00% | 53,562 |
+| 2 | 164 | 117 | 71.34% | 70,894 |
+| 3 | 155 | 96 | 61.94% | 83,812 |
+| total | 480 | 374 | 77.92% | 208,268 |
+
+These generation rates measure scripted data-generation completion. They are not
+the trained policy's Arena evaluation success rates.
+
 ## 3. Fine-tune GR00T on 8 GPUs
 
 Authenticate W&B once, then run the checked-in launcher. The Hugging Face models are
@@ -171,6 +206,18 @@ MP4s, keeps per-rank HTML reports and logs, and writes these aggregate outputs:
 Use `--no-record-camera-video` only for a deliberately faster non-visual evaluation.
 The renderer is Isaac Sim's `IsaacRtxRenderer` real-time RTX backend; this workflow
 does not enable path tracing.
+
+Final trained-policy success by blue-cube count:
+
+| blue cubes | evaluation episodes | successes | Arena success rate |
+| ---: | ---: | ---: | ---: |
+| 1 | 100 | 94 | 94% |
+| 2 | 100 | 41 | 41% |
+| 3 | 100 | 29 | 29% |
+| total | 300 | 164 | 54.67% |
+
+The checkpoint predicts a 40-action horizon. Arena executes the first 16 actions
+(`action_chunk_length=16`) before requesting a new chunk.
 
 ## Verified in this container
 
