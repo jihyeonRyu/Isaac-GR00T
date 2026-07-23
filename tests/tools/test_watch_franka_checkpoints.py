@@ -66,3 +66,36 @@ def test_load_state_recovers_from_invalid_json(tmp_path: Path) -> None:
     state_path.write_text("not-json")
 
     assert watcher.load_state(state_path) == {"completed": [], "attempts": {}}
+
+
+def test_run_probe_forwards_episode_and_local_reasoner(tmp_path: Path, monkeypatch) -> None:
+    captured: dict[str, list[str]] = {}
+
+    def fake_run(command, **_kwargs):
+        captured["command"] = command
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(watcher.subprocess, "run", fake_run)
+    args = SimpleNamespace(
+        output_dir=tmp_path,
+        frame_step=120,
+        probe_script=Path("probe.py"),
+        dataset=Path("dataset"),
+        phrase="blue cube",
+        action_group="all",
+        device="cuda:0",
+        wandb_project="franka-gr00t",
+        wandb_run_prefix="debug",
+        full_reasoner_model="/models/Cosmos-Reason2-2B",
+        wandb_entity=None,
+        skip_reasoner_generation=False,
+    )
+
+    returncode = watcher.run_probe(args, 250, Path("checkpoint-250"), episode=3)
+
+    assert returncode == 0
+    assert any(value.endswith("checkpoint-250-ep3-step120.png") for value in captured["command"])
+    episode_index = captured["command"].index("--episode")
+    reasoner_index = captured["command"].index("--full-reasoner-model")
+    assert captured["command"][episode_index + 1] == "3"
+    assert captured["command"][reasoner_index + 1] == "/models/Cosmos-Reason2-2B"

@@ -28,7 +28,7 @@ EPISODE_SAMPLING_RATE="${EPISODE_SAMPLING_RATE:-1.0}"
 USE_WANDB="${USE_WANDB:-0}"
 TUNE_LLM="${TUNE_LLM:-0}"
 DEBUG_VISUALIZE="${DEBUG_VISUALIZE:-1}"
-DEBUG_VIS_EPISODE="${DEBUG_VIS_EPISODE:-0}"
+DEBUG_VIS_EPISODES="${DEBUG_VIS_EPISODES:-0 1 2 3}"
 DEBUG_VIS_FRAME_STEP="${DEBUG_VIS_FRAME_STEP:-120}"
 DEBUG_VIS_ACTION_GROUP="${DEBUG_VIS_ACTION_GROUP:-all}"
 DEBUG_VIS_DEVICE="${DEBUG_VIS_DEVICE:-cuda:0}"
@@ -58,6 +58,20 @@ fi
 if [ "${USE_WANDB}" = "1" ] && ! wandb login --verify >/dev/null 2>&1; then
     echo "W&B login verification failed. Run: wandb login" >&2
     exit 3
+fi
+
+DEBUG_VIS_EPISODE_ARGS=()
+read -r -a DEBUG_VIS_EPISODE_VALUES <<< "${DEBUG_VIS_EPISODES}"
+for episode in "${DEBUG_VIS_EPISODE_VALUES[@]}"; do
+    if ! [[ "${episode}" =~ ^[0-9]+$ ]]; then
+        echo "Invalid debug episode index: ${episode}" >&2
+        exit 4
+    fi
+    DEBUG_VIS_EPISODE_ARGS+=(--episode "${episode}")
+done
+if [ "${#DEBUG_VIS_EPISODE_ARGS[@]}" -eq 0 ]; then
+    echo "DEBUG_VIS_EPISODES must contain at least one episode index" >&2
+    exit 4
 fi
 
 EXTRA_ARGS=()
@@ -97,7 +111,7 @@ if [ "${DEBUG_VISUALIZE}" = "1" ]; then
         --output-dir "${DEBUG_OUTPUT_DIR}" \
         --wandb-project "${WANDB_PROJECT}" \
         --wandb-run-prefix "${EXPERIMENT_NAME}-debug" \
-        --episode "${DEBUG_VIS_EPISODE}" \
+        "${DEBUG_VIS_EPISODE_ARGS[@]}" \
         --frame-step "${DEBUG_VIS_FRAME_STEP}" \
         --action-group "${DEBUG_VIS_ACTION_GROUP}" \
         --device "${DEBUG_VIS_DEVICE}" \

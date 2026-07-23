@@ -33,7 +33,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--wandb-project", required=True)
     parser.add_argument("--wandb-entity")
     parser.add_argument("--wandb-run-prefix", default="franka-attention")
-    parser.add_argument("--episode", type=int, default=0)
+    parser.add_argument("--episode", dest="episodes", action="append", type=int)
     parser.add_argument("--frame-step", type=int, default=120)
     parser.add_argument("--phrase", default="blue cube")
     parser.add_argument(
@@ -51,7 +51,13 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--max-attempts", type=int, default=2)
     parser.add_argument("--once", action="store_true")
     parser.add_argument("--skip-reasoner-generation", action="store_true")
-    return parser.parse_args()
+    parser.add_argument(
+        "--full-reasoner-model",
+        default=os.environ.get("GROOT_COSMOS_MODEL_PATH", "nvidia/Cosmos-Reason2-2B"),
+    )
+    args = parser.parse_args()
+    args.episodes = args.episodes or [0]
+    return args
 
 
 def checkpoint_step(path: Path) -> int | None:
@@ -124,8 +130,12 @@ def eligible_checkpoints(args: argparse.Namespace, state: dict) -> list[tuple[in
     return sorted(candidates)
 
 
-def run_probe(args: argparse.Namespace, step: int, checkpoint: Path) -> int:
-    output = args.output_dir / f"checkpoint-{step}-ep{args.episode}-step{args.frame_step}.png"
+def probe_output_path(args: argparse.Namespace, step: int, episode: int) -> Path:
+    return args.output_dir / f"checkpoint-{step}-ep{episode}-step{args.frame_step}.png"
+
+
+def run_probe(args: argparse.Namespace, step: int, checkpoint: Path, episode: int) -> int:
+    output = probe_output_path(args, step, episode)
     command = [
         sys.executable,
         str(args.probe_script),
@@ -134,7 +144,7 @@ def run_probe(args: argparse.Namespace, step: int, checkpoint: Path) -> int:
         "--checkpoint",
         str(checkpoint),
         "--episode",
-        str(args.episode),
+        str(episode),
         "--step",
         str(args.frame_step),
         "--phrase",
@@ -148,16 +158,21 @@ def run_probe(args: argparse.Namespace, step: int, checkpoint: Path) -> int:
         "--wandb-project",
         args.wandb_project,
         "--wandb-run-name",
-        f"{args.wandb_run_prefix}-checkpoint-{step}",
+        f"{args.wandb_run_prefix}-checkpoint-{step}-ep{episode}",
         "--global-step",
         str(step),
+        "--full-reasoner-model",
+        args.full_reasoner_model,
     ]
     if args.wandb_entity:
         command.extend(["--wandb-entity", args.wandb_entity])
     if args.skip_reasoner_generation:
         command.append("--skip-reasoner-generation")
     log_path = output.with_suffix(".log")
-    print(f"Running attention probe for checkpoint-{step}; log={log_path}", flush=True)
+    print(
+        f"Running attention probe for checkpoint-{step}, episode-{episode}; log={log_path}",
+        flush=True,
+    )
     with log_path.open("w") as log_file:
         result = subprocess.run(
             command,
@@ -191,14 +206,28 @@ def main() -> None:
                 continue
             state["attempts"][key] = attempts + 1
             save_state(state_path, state)
-            returncode = run_probe(args, step, checkpoint)
-            if returncode == 0:
+            failed_episodes: list[tuple[int, int]] = []
+            for episode in args.episodes:
+                output = probe_output_path(args, step, episode)
+                if output.is_file() and output.with_suffix(".json").is_file():
+                    print(
+                        f"Reusing attention probe for checkpoint-{step}, episode-{episode}",
+                        flush=True,
+                    )
+                    continue
+                returncode = run_probe(args, step, checkpoint, episode)
+                if returncode != 0:
+                    failed_episodes.append((episode, returncode))
+            if not failed_episodes:
                 state["completed"].append(step)
                 state["completed"] = sorted(set(state["completed"]))
-                print(f"Completed attention probe for checkpoint-{step}", flush=True)
+                print(
+                    f"Completed attention probes for checkpoint-{step}: episodes={args.episodes}",
+                    flush=True,
+                )
             else:
                 print(
-                    f"Attention probe for checkpoint-{step} failed with exit code {returncode}",
+                    f"Attention probes for checkpoint-{step} failed: {failed_episodes}",
                     flush=True,
                 )
             save_state(state_path, state)
