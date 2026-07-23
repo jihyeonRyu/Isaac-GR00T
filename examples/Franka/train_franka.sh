@@ -83,6 +83,14 @@ if [ "${TUNE_LLM}" = "1" ]; then
     EXTRA_ARGS=(-- --tune-llm)
 fi
 
+IMAGE_AUG_ARGS=()
+if [ -n "${SHORTEST_IMAGE_EDGE}" ]; then
+    IMAGE_AUG_ARGS+=(--shortest-image-edge "${SHORTEST_IMAGE_EDGE}")
+fi
+if [ -n "${CROP_FRACTION}" ]; then
+    IMAGE_AUG_ARGS+=(--crop-fraction "${CROP_FRACTION}")
+fi
+
 echo "Starting Franka GR00T fine-tuning"
 echo "  dataset: ${DATASET_PATH}"
 echo "  base model: ${BASE_MODEL_PATH}"
@@ -141,8 +149,6 @@ DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS}" \
 SHARD_SIZE="${SHARD_SIZE}" \
 NUM_SHARDS_PER_EPOCH="${NUM_SHARDS_PER_EPOCH}" \
 EPISODE_SAMPLING_RATE="${EPISODE_SAMPLING_RATE}" \
-SHORTEST_IMAGE_EDGE="${SHORTEST_IMAGE_EDGE}" \
-CROP_FRACTION="${CROP_FRACTION}" \
 bash examples/finetune.sh \
     --base-model-path "${BASE_MODEL_PATH}" \
     --dataset-path "${DATASET_PATH}" \
@@ -154,4 +160,5 @@ bash examples/finetune.sh \
     --state-dropout-prob "${STATE_DROPOUT_PROB}" \
     --color-jitter-params "${COLOR_JITTER_PARAMS}" \
     --use-percentiles true \
+    "${IMAGE_AUG_ARGS[@]}" \
     "${EXTRA_ARGS[@]}"
