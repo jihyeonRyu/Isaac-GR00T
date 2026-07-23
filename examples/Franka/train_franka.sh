@@ -27,6 +27,10 @@ NUM_SHARDS_PER_EPOCH="${NUM_SHARDS_PER_EPOCH:-100000}"
 EPISODE_SAMPLING_RATE="${EPISODE_SAMPLING_RATE:-1.0}"
 USE_WANDB="${USE_WANDB:-0}"
 TUNE_LLM="${TUNE_LLM:-0}"
+SHORTEST_IMAGE_EDGE="${SHORTEST_IMAGE_EDGE:-}"
+CROP_FRACTION="${CROP_FRACTION:-}"
+STATE_DROPOUT_PROB="${STATE_DROPOUT_PROB:-0.1}"
+COLOR_JITTER_PARAMS="${COLOR_JITTER_PARAMS:-brightness 0.2 contrast 0.2 saturation 0.25 hue 0.02}"
 DEBUG_VISUALIZE="${DEBUG_VISUALIZE:-1}"
 DEBUG_VIS_EPISODES="${DEBUG_VIS_EPISODES:-0 1 2 3}"
 DEBUG_VIS_FRAME_STEP="${DEBUG_VIS_FRAME_STEP:-120}"
@@ -85,6 +89,9 @@ echo "  base model: ${BASE_MODEL_PATH}"
 echo "  output: ${OUTPUT_DIR}/${EXPERIMENT_NAME}"
 echo "  W&B: ${WANDB_PROJECT}/${EXPERIMENT_NAME}"
 echo "  GPUs/global batch/steps: ${NUM_GPUS}/${GLOBAL_BATCH_SIZE}/${MAX_STEPS}"
+echo "  shortest edge/crop fraction: ${SHORTEST_IMAGE_EDGE:-legacy}/${CROP_FRACTION:-legacy}"
+echo "  state dropout: ${STATE_DROPOUT_PROB}"
+echo "  color jitter: ${COLOR_JITTER_PARAMS}"
 echo "  tune reasoner: ${TUNE_LLM}"
 echo "  automatic offline W&B attention probe: ${DEBUG_VISUALIZE}"
 
@@ -134,6 +141,8 @@ DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS}" \
 SHARD_SIZE="${SHARD_SIZE}" \
 NUM_SHARDS_PER_EPOCH="${NUM_SHARDS_PER_EPOCH}" \
 EPISODE_SAMPLING_RATE="${EPISODE_SAMPLING_RATE}" \
+SHORTEST_IMAGE_EDGE="${SHORTEST_IMAGE_EDGE}" \
+CROP_FRACTION="${CROP_FRACTION}" \
 bash examples/finetune.sh \
     --base-model-path "${BASE_MODEL_PATH}" \
     --dataset-path "${DATASET_PATH}" \
@@ -142,7 +151,7 @@ bash examples/finetune.sh \
     --output-dir "${OUTPUT_DIR}" \
     --experiment-name "${EXPERIMENT_NAME}" \
     --wandb-project "${WANDB_PROJECT}" \
-    --state-dropout-prob 0.1 \
-    --color-jitter-params "brightness 0.2 contrast 0.2 saturation 0.25 hue 0.02" \
+    --state-dropout-prob "${STATE_DROPOUT_PROB}" \
+    --color-jitter-params "${COLOR_JITTER_PARAMS}" \
     --use-percentiles true \
     "${EXTRA_ARGS[@]}"
