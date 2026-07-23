@@ -106,8 +106,9 @@ SAVE_STEPS=2 DATALOADER_NUM_WORKERS=0 EXPERIMENT_NAME=franka-blue-cube-smoke`.
 
 ## 4. Evaluate the checkpoint in Arena on 8 GPUs
 
-The parallel launcher starts one GR00T server and one Arena worker per physical GPU.
-Each worker uses `cuda:0` inside its own `CUDA_VISIBLE_DEVICES` namespace. Install the
+The parallel launcher starts one GR00T server per physical GPU and launches a fresh
+Arena worker for each task stage on that GPU. Each process uses `cuda:0` inside its
+own `CUDA_VISIBLE_DEVICES` namespace. Install the
 small RPC dependencies in the Arena venv once if they are not already present:
 
 ```bash
@@ -116,7 +117,7 @@ source .venv/bin/activate
 python -m pip install msgpack-numpy==0.4.8 pyzmq==27.0.1
 ```
 
-Run the 10-episode-per-task evaluation:
+Run the 100-episode-per-task evaluation (300 episodes total):
 
 ```bash
 cd /workspace/IsaacLab-Arena
@@ -125,9 +126,9 @@ source .venv/bin/activate
 python -m isaaclab_arena_gr00t.parallel_evaluation \
   --checkpoint /workspace/Isaac-GR00T/outputs/franka-groot-sft/franka-blue-cube-sft-crop098-aug-v2/checkpoint-10000 \
   --num-gpus 8 \
-  --episodes-per-task 10 \
+  --episodes-per-task 100 \
   --base-port 5655 \
-  --output-dir /workspace/IsaacLab-Arena/outputs/franka-gr00t-parallel/final-crop098-aug-v2-8gpu
+  --output-dir /workspace/IsaacLab-Arena/outputs/franka-gr00t-parallel/final-crop098-aug-v2-8gpu-renderfix-100eps
 ```
 
 Port 5655 is used because another service may occupy the default port 5555. The
@@ -143,11 +144,17 @@ Evaluation deliberately uses seeds distinct from data generation:
 | two blue cubes | 20007 | 20007–20014 |
 | three blue cubes | 30007 | 30007–30014 |
 
-The 10 episodes for each task are split across the eight workers as
-`[2, 2, 1, 1, 1, 1, 1, 1]`. Every worker runs one Arena environment, which avoids
+The 100 episodes for each task are split across the eight workers as
+`[13, 13, 13, 13, 12, 12, 12, 12]`. Every worker runs one Arena environment, which avoids
 multiplying the policy server batch unexpectedly. Recorder HDF5 datasets are written
 inside each run output directory with a rebuild-specific filename, so concurrent
 workers never contend for `/tmp/isaaclab/logs`.
+
+Each task starts in a new Isaac Sim process, and the launcher passes synchronous RTX
+geometry-loading arguments. This avoids stale Fabric/RTX transforms after stage
+rebuilds. Arena also matches the generated-data distribution by using fixed 5 cm
+cubes and limiting sampled cube centers to the generator workspace maximum x of
+0.62 m.
 
 Camera visualization is enabled by default. The launcher records external and wrist
 MP4s, keeps per-rank HTML reports and logs, and writes these aggregate outputs:
@@ -157,8 +164,8 @@ MP4s, keeps per-rank HTML reports and logs, and writes these aggregate outputs:
 <output-dir>/summary.json
 <output-dir>/index.html
 <output-dir>/logs/server-rank-*.log
-<output-dir>/logs/arena-rank-*.log
-<output-dir>/rank-*/...
+<output-dir>/logs/arena-<task>-rank-*.log
+<output-dir>/rank-*/stage-<task>/...
 ```
 
 Use `--no-record-camera-video` only for a deliberately faster non-visual evaluation.
@@ -173,3 +180,5 @@ does not enable path tracing.
 - The 8-GPU training run reached step 10,000 and wrote a complete `checkpoint-10000`.
 - Four checkpoint-10,000 attention/debug images were produced for episodes 0–3.
 - Arena cameras match generation at 15 FPS and 320×256 for both external and wrist views.
+- A three-task render smoke test verified intact Franka geometry with a fresh Arena process per task.
+- The final 8-GPU evaluation completed 100 episodes per task: 94% for one cube, 41% for two cubes, and 29% for three cubes.
