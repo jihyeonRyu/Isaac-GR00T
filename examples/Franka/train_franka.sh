@@ -15,6 +15,7 @@ OUTPUT_DIR="${OUTPUT_DIR:-${REPO_ROOT}/outputs/franka-groot-sft}"
 EXPERIMENT_NAME="${EXPERIMENT_NAME:-franka-blue-cube-sft}"
 WANDB_PROJECT="${WANDB_PROJECT:-franka-gr00t}"
 HF_HOME="${HF_HOME:-/workspace/models/huggingface-cache}"
+GROOT_COSMOS_MODEL_PATH="${GROOT_COSMOS_MODEL_PATH:-/workspace/models/Cosmos-Reason2-2B}"
 
 NUM_GPUS="${NUM_GPUS:-8}"
 GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-32}"
@@ -24,7 +25,7 @@ DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-2}"
 SHARD_SIZE="${SHARD_SIZE:-512}"
 NUM_SHARDS_PER_EPOCH="${NUM_SHARDS_PER_EPOCH:-100000}"
 EPISODE_SAMPLING_RATE="${EPISODE_SAMPLING_RATE:-1.0}"
-USE_WANDB="${USE_WANDB:-1}"
+USE_WANDB="${USE_WANDB:-0}"
 TUNE_LLM="${TUNE_LLM:-0}"
 DEBUG_VISUALIZE="${DEBUG_VISUALIZE:-1}"
 DEBUG_VIS_EPISODE="${DEBUG_VIS_EPISODE:-0}"
@@ -35,7 +36,7 @@ DEBUG_VIS_MIN_STEP="${DEBUG_VIS_MIN_STEP:-${SAVE_STEPS}}"
 DEBUG_VIS_EVERY_N_CHECKPOINTS="${DEBUG_VIS_EVERY_N_CHECKPOINTS:-1}"
 DEBUG_OUTPUT_DIR="${DEBUG_OUTPUT_DIR:-${REPO_ROOT}/outputs/attention/${EXPERIMENT_NAME}}"
 
-for path in "${VENV_PATH}/bin/activate" "${BASE_MODEL_PATH}" "${DATASET_PATH}"; do
+for path in "${VENV_PATH}/bin/activate" "${BASE_MODEL_PATH}" "${GROOT_COSMOS_MODEL_PATH}" "${DATASET_PATH}"; do
     if [ ! -e "${path}" ]; then
         echo "Required path does not exist: ${path}" >&2
         exit 1
@@ -44,23 +45,13 @@ done
 
 # shellcheck disable=SC1091
 source "${VENV_PATH}/bin/activate"
-export HF_HOME WANDB_PROJECT
+export HF_HOME GROOT_COSMOS_MODEL_PATH WANDB_PROJECT
 export TOKENIZERS_PARALLELISM=false
 export PYTHONUNBUFFERED=1
 export NO_ALBUMENTATIONS_UPDATE=1
 
-HF_AUTH_STATUS="$(hf auth whoami 2>&1 || true)"
-if [[ "${HF_AUTH_STATUS}" == *"Not logged in"* ]]; then
-    echo "Hugging Face is not authenticated in HF_HOME=${HF_HOME}." >&2
-    echo "Run: HF_HOME=${HF_HOME} hf auth login" >&2
-    echo "The account also needs access to nvidia/Cosmos-Reason2-2B." >&2
-    exit 2
-fi
-
-if ! hf download nvidia/Cosmos-Reason2-2B config.json >/dev/null 2>&1; then
-    echo "The current Hugging Face account cannot access nvidia/Cosmos-Reason2-2B." >&2
-    echo "Request model access, then run: HF_HOME=${HF_HOME} hf auth login" >&2
-    echo "Training has not started and no W&B run was created." >&2
+if [ ! -f "${GROOT_COSMOS_MODEL_PATH}/config.json" ]; then
+    echo "Cosmos config is missing: ${GROOT_COSMOS_MODEL_PATH}/config.json" >&2
     exit 2
 fi
 

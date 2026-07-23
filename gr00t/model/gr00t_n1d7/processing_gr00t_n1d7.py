@@ -126,7 +126,12 @@ def build_processor(model_name: str, transformers_loading_kwargs: dict) -> Qwen3
             "Qwen3VLProcessor is not available. "
             "Please upgrade transformers: pip install transformers>=4.52.0"
         )
-    return Qwen3VLProcessor.from_pretrained(model_name, **transformers_loading_kwargs)
+    resolved_model_name = os.environ.get("GROOT_COSMOS_MODEL_PATH", model_name)
+    if resolved_model_name != model_name and not Path(resolved_model_name).is_dir():
+        raise FileNotFoundError(
+            f"GROOT_COSMOS_MODEL_PATH does not point to a directory: {resolved_model_name}"
+        )
+    return Qwen3VLProcessor.from_pretrained(resolved_model_name, **transformers_loading_kwargs)
 
 
 def validate_action_horizons(modality_configs, max_action_horizon: int) -> None:

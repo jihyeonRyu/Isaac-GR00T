@@ -14,6 +14,7 @@
 # limitations under the License.
 
 import logging
+import os
 
 from huggingface_hub.errors import GatedRepoError
 import torch
@@ -181,7 +182,7 @@ class Qwen3Backbone(torch.nn.Module):
 
         try:
             self.model = Qwen3VLForConditionalGeneration.from_pretrained(
-                model_name,
+                os.environ.get("GROOT_COSMOS_MODEL_PATH", model_name),
                 **extra_kwargs,
                 **transformers_loading_kwargs,
             ).eval()
