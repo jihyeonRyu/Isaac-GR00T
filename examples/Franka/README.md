@@ -4,27 +4,21 @@ This setup fine-tunes GR00T N1.7 on
 `franka_parallel_groot_lerobot` (15 fps, external + wrist cameras). The task
 instruction is to pick only blue cubes and place them on the tray.
 
-## One-time authentication
+## Local models and W&B authentication
 
-The local GR00T checkpoint still loads its gated reasoner from
-`nvidia/Cosmos-Reason2-2B`. Request access on Hugging Face, then authenticate
-without pasting a token into a shell history or chat:
+GR00T N1.7 and Cosmos Reason2 are downloaded public models and are loaded from
+`/workspace/models/GR00T-N1.7-3B` and `/workspace/models/Cosmos-Reason2-2B`.
+No Hugging Face login is required for the checked-in local workflow. Authenticate
+W&B once to use the default online training run:
 
 ```bash
 cd /workspace/Isaac-GR00T
 source .venv/bin/activate
-HF_HOME=/workspace/models/huggingface-cache hf auth login
 wandb login
-```
-
-Verify both sessions:
-
-```bash
-HF_HOME=/workspace/models/huggingface-cache hf auth whoami
 wandb login --verify
 ```
 
-W&B uses project `franka-gr00t` by default.
+W&B uses project `franka-gr00t` and online mode by default.
 
 ## Check the blue-cube segmentation
 
@@ -72,10 +66,11 @@ TUNE_LLM=1 GLOBAL_BATCH_SIZE=16 bash examples/Franka/train_franka.sh
 ## Automatic offline W&B debugging
 
 `train_franka.sh` starts a sidecar watcher automatically. It waits for a complete
-checkpoint, probes the fixed episode/frame, and writes an offline W&B run plus PNG
-and JSON artifacts. By default it probes every saved checkpoint (`SAVE_STEPS=250`).
+checkpoint, probes episodes 0, 1, 2, and 3 at frame 120, and writes an offline W&B
+run plus PNG and JSON artifacts. By default it probes every saved checkpoint
+(`SAVE_STEPS=250`).
 
-Useful controls are `DEBUG_VISUALIZE=0`, `DEBUG_VIS_EPISODE`,
+Useful controls are `DEBUG_VISUALIZE=0`, `DEBUG_VIS_EPISODES`,
 `DEBUG_VIS_FRAME_STEP`, `DEBUG_VIS_ACTION_GROUP`, and
 `DEBUG_VIS_EVERY_N_CHECKPOINTS`. For example, probe every fourth checkpoint:
 
@@ -109,15 +104,15 @@ Run the probe on a single GPU, separate from the distributed training process:
 ```bash
 python tools/visualize_franka_attention.py \
   --dataset /workspace/datasets/franka_parallel_groot_lerobot \
-  --checkpoint outputs/franka-groot-sft/franka-blue-cube-sft/checkpoint-250 \
+  --checkpoint outputs/franka-groot-sft/franka-blue-cube-sft-crop098-aug-v2/checkpoint-10000 \
   --episode 0 \
   --step 120 \
   --phrase "blue cube" \
   --action-group all \
-  --output outputs/attention/checkpoint-250-ep0-step120.png \
+  --output outputs/attention/checkpoint-10000-ep0-step120.png \
   --wandb-project franka-gr00t \
-  --wandb-run-name franka-attention-checkpoint-250 \
-  --global-step 250
+  --wandb-run-name franka-attention-checkpoint-10000 \
+  --global-step 10000
 ```
 
 Each output contains the exact model input, the blue HSV mask, the final four

@@ -58,76 +58,118 @@ The converter:
 
 Use `--allow-incomplete` only when intentionally skipping malformed recordings. Use `--include-failed` only for diagnostics, not normal imitation learning.
 
-## 3. Fine-tune GR00T
+## 3. Fine-tune GR00T on 8 GPUs
 
-The Franka training script defaults to local model/cache paths and W&B disabled. This example uses physical GPUs 4–7.
+Authenticate W&B once, then run the checked-in launcher. The Hugging Face models are
+already stored locally, so training does not depend on an online model download.
 
 ```bash
 cd /workspace/Isaac-GR00T
 source .venv/bin/activate
+wandb login
 
-CUDA_VISIBLE_DEVICES=4,5,6,7 \
-NUM_GPUS=4 \
-GLOBAL_BATCH_SIZE=32 \
-DATASET_PATH=/workspace/datasets/franka_parallel_groot_lerobot \
-USE_WANDB=0 \
-DEBUG_VISUALIZE=0 \
-./examples/Franka/train_franka.sh
+bash examples/Franka/train_franka.sh
 ```
 
-Default output:
+The current defaults are the reproducible full-run settings:
+
+- 8 GPUs and global batch size 64;
+- 10,000 optimizer steps, checkpoint every 250 steps;
+- `crop_fraction=0.98` with shortest image edge 256;
+- state dropout 0.20;
+- brightness/contrast/saturation/hue jitter 0.25/0.25/0.30/0.03;
+- W&B online project `franka-gr00t`;
+- frozen visual-language reasoner (`TUNE_LLM=0`), with projector and diffusion head trained;
+- four debug samples (episodes 0, 1, 2, and 3 at frame 120) at every saved checkpoint.
+
+The completed run is:
 
 ```text
-/workspace/Isaac-GR00T/outputs/franka-groot-sft/franka-blue-cube-sft/
+/workspace/Isaac-GR00T/outputs/franka-groot-sft/
+  franka-blue-cube-sft-crop098-aug-v2/checkpoint-10000
 ```
 
-For a short pipeline check before a long run, add `MAX_STEPS=2 SAVE_STEPS=1`.
+Its W&B run is `iycwnbnb`. The final four local attention images are under:
 
-## 4. Start the fine-tuned GR00T policy server
+```text
+/workspace/Isaac-GR00T/outputs/attention/
+  franka-blue-cube-sft-crop098-aug-v2/checkpoint-10000-ep{0,1,2,3}-step120.png
+```
 
-Replace `<checkpoint>` with a generated checkpoint directory.
+The reasoner attention panels use the dataset task prompt stored in LeRobot metadata.
+They show Cosmos attention for that prompt and input image. With `TUNE_LLM=0`, raw
+reasoner attention is expected to remain mostly fixed; action saliency can still change
+because the projector and action head are trained.
+
+For a short pipeline check, override `NUM_GPUS=1 GLOBAL_BATCH_SIZE=2 MAX_STEPS=2
+SAVE_STEPS=2 DATALOADER_NUM_WORKERS=0 EXPERIMENT_NAME=franka-blue-cube-smoke`.
+
+## 4. Evaluate the checkpoint in Arena on 8 GPUs
+
+The parallel launcher starts one GR00T server and one Arena worker per physical GPU.
+Each worker uses `cuda:0` inside its own `CUDA_VISIBLE_DEVICES` namespace. Install the
+small RPC dependencies in the Arena venv once if they are not already present:
 
 ```bash
-cd /workspace/Isaac-GR00T
+cd /workspace/IsaacLab-Arena
 source .venv/bin/activate
-
-CUDA_VISIBLE_DEVICES=4 HF_HUB_OFFLINE=1 \
-python gr00t/eval/run_gr00t_server.py \
-  --model-path /workspace/Isaac-GR00T/outputs/franka-groot-sft/franka-blue-cube-sft/<checkpoint> \
-  --embodiment-tag NEW_EMBODIMENT \
-  --device cuda:0 \
-  --host 127.0.0.1 \
-  --port 5555
+python -m pip install msgpack-numpy==0.4.8 pyzmq==27.0.1
 ```
 
-`cuda:0` here means physical GPU 4 because `CUDA_VISIBLE_DEVICES=4`.
-
-## 5. Evaluate in IsaacLab Arena
-
-Run this in another terminal while the policy server is listening.
+Run the 10-episode-per-task evaluation:
 
 ```bash
 cd /workspace/IsaacLab-Arena
 source .venv/bin/activate
 
-python -m isaaclab_arena.evaluation.experiment_runner \
-  --experiment_config isaaclab_arena_environments/experiment_configs/franka_blue_tray_gr00t_experiment.yaml \
-  --enable_cameras \
-  --headless \
-  --device cuda:1 \
-  --remote_host 127.0.0.1 \
-  --remote_port 5555 \
-  --record_camera_video
+python -m isaaclab_arena_gr00t.parallel_evaluation \
+  --checkpoint /workspace/Isaac-GR00T/outputs/franka-groot-sft/franka-blue-cube-sft-crop098-aug-v2/checkpoint-10000 \
+  --num-gpus 8 \
+  --episodes-per-task 10 \
+  --base-port 5655 \
+  --output-dir /workspace/IsaacLab-Arena/outputs/franka-gr00t-parallel/final-crop098-aug-v2-8gpu
 ```
 
-The experiment reports separate success rates for one, two, and three blue cubes. Camera observations are aligned to the generator at 15 FPS, 320×256, 20.955 mm horizontal aperture, 28 mm external focal length, and 10 mm wrist focal length.
+Port 5655 is used because another service may occupy the default port 5555. The
+launcher checks all requested GPUs, model/config paths, and the complete port range
+before starting any child process. It also supplies the local Cosmos path and required
+Isaac Sim EULA environment variables.
+
+Evaluation deliberately uses seeds distinct from data generation:
+
+| task | base seed | rank seeds |
+| --- | ---: | --- |
+| one blue cube | 10007 | 10007–10014 |
+| two blue cubes | 20007 | 20007–20014 |
+| three blue cubes | 30007 | 30007–30014 |
+
+The 10 episodes for each task are split across the eight workers as
+`[2, 2, 1, 1, 1, 1, 1, 1]`. Every worker runs one Arena environment, which avoids
+multiplying the policy server batch unexpectedly. Recorder HDF5 datasets are written
+inside each run output directory with a rebuild-specific filename, so concurrent
+workers never contend for `/tmp/isaaclab/logs`.
+
+Camera visualization is enabled by default. The launcher records external and wrist
+MP4s, keeps per-rank HTML reports and logs, and writes these aggregate outputs:
+
+```text
+<output-dir>/parallel_eval_manifest.json
+<output-dir>/summary.json
+<output-dir>/index.html
+<output-dir>/logs/server-rank-*.log
+<output-dir>/logs/arena-rank-*.log
+<output-dir>/rank-*/...
+```
+
+Use `--no-record-camera-video` only for a deliberately faster non-visual evaluation.
+The renderer is Isaac Sim's `IsaacRtxRenderer` real-time RTX backend; this workflow
+does not enable path tracing.
 
 ## Verified in this container
 
-- Isaac Sim 6 / Isaac Lab 3 imports and sees all 8 GPUs.
-- GR00T and Cosmos checkpoints load together with `HF_HUB_OFFLINE=1` (3,144,016,000 GR00T parameters).
-- TorchCodec decodes converted external/wrist videos through the local FFmpeg 7 runtime.
-- Converter end-to-end test passed with a 45-frame synthetic fixture and a completed 747-frame real episode.
-- The real converted episode loaded through GR00T with external/wrist RGB `(256, 320, 3)`, EEF state 9D, EEF delta action 6D, and gripper 1D.
-- Arena 1-env and 4-env/5-object camera smoke runs both completed.
-- Arena camera configuration is `(N, 256, 320, 3)` for both external and wrist views.
+- 480 generated attempts produced 374 valid LeRobot v2.1 episodes and 208,268 frames at 15 FPS.
+- The converted dataset has external/wrist RGB `(256, 320, 3)`, EEF pose state 9D plus gripper 1D, and EEF delta action 6D plus gripper 1D.
+- GR00T N1.7 and Cosmos Reason2 load from `/workspace/models` without a runtime Hugging Face download.
+- The 8-GPU training run reached step 10,000 and wrote a complete `checkpoint-10000`.
+- Four checkpoint-10,000 attention/debug images were produced for episodes 0–3.
+- Arena cameras match generation at 15 FPS and 320×256 for both external and wrist views.
