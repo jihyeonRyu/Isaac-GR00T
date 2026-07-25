@@ -5,6 +5,7 @@ set -x -euo pipefail
 NUM_GPUS="${NUM_GPUS:-1}"
 MASTER_PORT="${MASTER_PORT:-29500}"
 SAVE_STEPS="${SAVE_STEPS:-1000}"
+SAVE_TOTAL_LIMIT="${SAVE_TOTAL_LIMIT:-5}"
 MAX_STEPS="${MAX_STEPS:-10000}"
 LEARNING_RATE="${LEARNING_RATE:-1e-4}"
 LR_SCHEDULER_TYPE="${LR_SCHEDULER_TYPE:-cosine}"
@@ -162,7 +163,7 @@ LAUNCH_CMD=(
     --num_gpus "$NUM_GPUS"
     --output_dir "$OUTPUT_DIR"
     --save_steps "$SAVE_STEPS"
-    --save_total_limit 5
+    --save_total_limit "$SAVE_TOTAL_LIMIT"
     --max_steps "$MAX_STEPS"
     --warmup_ratio "$WARMUP_RATIO"
     --weight_decay "$WEIGHT_DECAY"
