@@ -105,6 +105,45 @@ def test_from_pretrained_passes_hub_kwargs_to_cached_file(tmp_path):
         }
 
 
+def test_from_pretrained_honors_processing_overrides(tmp_path):
+    """Explicit fine-tune preprocessing settings must override checkpoint defaults."""
+    from gr00t.model.gr00t_n1d7 import processing_gr00t_n1d7 as processor_module
+
+    mock_vlm = MagicMock()
+    mock_vlm.apply_chat_template.return_value = "mock text"
+    mock_vlm.tokenizer.padding_side = "left"
+    jitter = {"brightness": 0.25, "contrast": 0.25, "saturation": 0.30, "hue": 0.03}
+
+    for name in ("processor_config.json", "statistics.json", "embodiment_id.json"):
+        (tmp_path / name).write_bytes((FIXTURE_DIR / name).read_bytes())
+    config_path = tmp_path / "processor_config.json"
+    config = json.loads(config_path.read_text())
+    config["processor_kwargs"]["image_crop_size"] = [230, 230]
+    config["processor_kwargs"]["image_target_size"] = [256, 256]
+    config["processor_kwargs"]["crop_fraction"] = 0.95
+    config_path.write_text(json.dumps(config))
+
+    with patch.object(processor_module, "build_processor", return_value=mock_vlm):
+        proc = processor_module.Gr00tN1d7Processor.from_pretrained(
+            tmp_path,
+            image_crop_size=None,
+            image_target_size=None,
+            shortest_image_edge=256,
+            crop_fraction=0.98,
+            color_jitter_params=jitter,
+            use_percentiles=False,
+            state_dropout_prob=0.0,
+        )
+
+    assert proc.image_crop_size is None
+    assert proc.image_target_size is None
+    assert proc.shortest_image_edge == 256
+    assert proc.crop_fraction == pytest.approx(0.98)
+    assert proc.color_jitter_params == jitter
+    assert proc.use_percentiles is False
+    assert proc.state_dropout_prob == 0.0
+
+
 def _make_step_data(proc_config) -> VLAStepData:
     """Create synthetic VLAStepData matching the fixture config."""
     import json as _json

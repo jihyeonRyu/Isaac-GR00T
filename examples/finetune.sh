@@ -6,7 +6,15 @@ NUM_GPUS="${NUM_GPUS:-1}"
 MASTER_PORT="${MASTER_PORT:-29500}"
 SAVE_STEPS="${SAVE_STEPS:-1000}"
 MAX_STEPS="${MAX_STEPS:-10000}"
+LEARNING_RATE="${LEARNING_RATE:-1e-4}"
+LR_SCHEDULER_TYPE="${LR_SCHEDULER_TYPE:-cosine}"
+WARMUP_RATIO="${WARMUP_RATIO:-0.05}"
+WEIGHT_DECAY="${WEIGHT_DECAY:-1e-5}"
 USE_WANDB="${USE_WANDB:-1}"
+USE_EMA="${USE_EMA:-0}"
+EMA_DECAY="${EMA_DECAY:-0.999}"
+EMA_UPDATE_AFTER_STEP="${EMA_UPDATE_AFTER_STEP:-0}"
+EMA_UPDATE_EVERY="${EMA_UPDATE_EVERY:-1}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-4}"
 GLOBAL_BATCH_SIZE="${GLOBAL_BATCH_SIZE:-32}"
 SHARD_SIZE="${SHARD_SIZE:-1024}"
@@ -22,6 +30,7 @@ OUTPUT_DIR=""
 EXPERIMENT_NAME=""
 WANDB_PROJECT=""
 STATE_DROPOUT_PROB=""
+PROCESSOR_STATE_DROPOUT_PROB=""
 COLOR_JITTER_PARAMS="${COLOR_JITTER_PARAMS:-brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08}"
 USE_PERCENTILES=""
 SHORTEST_IMAGE_EDGE=""
@@ -37,6 +46,7 @@ Usage: bash examples/finetune.sh \
   --output-dir <path> \
   [--modality-config-path <path>] \
   [--state-dropout-prob <value>] \
+  [--processor-state-dropout-prob <value>] \
   [--color-jitter-params "brightness 0.3 contrast 0.4 saturation 0.5 hue 0.08"] \
   [--use-percentiles <true|false>] \
   [--shortest-image-edge <pixels>] \
@@ -80,6 +90,10 @@ while [ "$#" -gt 0 ]; do
             ;;
         --state-dropout-prob)
             STATE_DROPOUT_PROB="$2"
+            shift 2
+            ;;
+        --processor-state-dropout-prob)
+            PROCESSOR_STATE_DROPOUT_PROB="$2"
             shift 2
             ;;
         --color-jitter-params)
@@ -150,16 +164,23 @@ LAUNCH_CMD=(
     --save_steps "$SAVE_STEPS"
     --save_total_limit 5
     --max_steps "$MAX_STEPS"
-    --warmup_ratio 0.05
-    --weight_decay 1e-5
-    --learning_rate 1e-4
+    --warmup_ratio "$WARMUP_RATIO"
+    --weight_decay "$WEIGHT_DECAY"
+    --learning_rate "$LEARNING_RATE"
+    --lr_scheduler_type "$LR_SCHEDULER_TYPE"
     "${WANDB_FLAG[@]}"
     --global_batch_size "$GLOBAL_BATCH_SIZE"
     --dataloader_num_workers "$DATALOADER_NUM_WORKERS"
     --shard_size "$SHARD_SIZE"
     --num_shards_per_epoch "$NUM_SHARDS_PER_EPOCH"
     --episode_sampling_rate "$EPISODE_SAMPLING_RATE"
+    --ema-decay "$EMA_DECAY"
+    --ema-update-after-step "$EMA_UPDATE_AFTER_STEP"
+    --ema-update-every "$EMA_UPDATE_EVERY"
 )
+if [ "$USE_EMA" = "1" ]; then
+    LAUNCH_CMD+=(--use-ema)
+fi
 
 if [ -n "$MODALITY_CONFIG_PATH" ]; then
     LAUNCH_CMD+=(--modality_config_path "$MODALITY_CONFIG_PATH")
@@ -173,6 +194,9 @@ fi
 
 if [ -n "$STATE_DROPOUT_PROB" ]; then
     LAUNCH_CMD+=(--state_dropout_prob "$STATE_DROPOUT_PROB")
+fi
+if [ -n "$PROCESSOR_STATE_DROPOUT_PROB" ]; then
+    LAUNCH_CMD+=(--processor_state_dropout_prob "$PROCESSOR_STATE_DROPOUT_PROB")
 fi
 if [ -n "$COLOR_JITTER_PARAMS" ]; then
     read -r -a COLOR_JITTER_ARGS <<< "$COLOR_JITTER_PARAMS"

@@ -874,8 +874,18 @@ class Gr00tN1d7Processor(BaseProcessor):
             for embodiment_tag, modality_config in modality_configs.items():
                 processor_kwargs["modality_configs"][embodiment_tag] = modality_config
             override_keys = [
+                "image_crop_size",
+                "image_target_size",
+                "use_albumentations",
                 "random_rotation_angle",
                 "color_jitter_params",
+                "shortest_image_edge",
+                "crop_fraction",
+                "letter_box_transform",
+                "formalize_language",
+                "apply_sincos_state_encoding",
+                "use_percentiles",
+                "clip_outliers",
                 "use_relative_action",
                 "exclude_state",
                 "state_dropout_prob",
@@ -886,10 +896,16 @@ class Gr00tN1d7Processor(BaseProcessor):
                 "max_state_dim",
                 "max_action_dim",
             ]
+            allow_none_override_keys = {
+                # These legacy fields must be cleared when the fractional crop
+                # path is selected explicitly.
+                "image_crop_size",
+                "image_target_size",
+            }
             for key in override_keys:
                 if key in kwargs:
                     override = kwargs.pop(key)
-                    if override is not None:
+                    if override is not None or key in allow_none_override_keys:
                         processor_kwargs[key] = override
         return cls(**processor_kwargs, transformers_loading_kwargs=transformers_loading_kwargs)
 

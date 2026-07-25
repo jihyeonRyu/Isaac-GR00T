@@ -49,6 +49,12 @@ class TrainingConfig:
     warmup_steps: int = 0  # this will override warmup_ratio
     max_grad_norm: float = 1.0
 
+    # Exponential moving average of trainable model parameters.
+    use_ema: bool = False
+    ema_decay: float = 0.999
+    ema_update_after_step: int = 0
+    ema_update_every: int = 1
+
     # Optimizer choice (huggingface TrainingArguments.optim)
     # Options include: 'adamw_torch', 'adamw_torch_fused', 'paged_adamw_32bit',
     # 'paged_adamw_8bit' (requires bitsandbytes), 'adafactor', etc.
@@ -160,6 +166,12 @@ class TrainingConfig:
                 f"(× gradient_accumulation_steps={self.gradient_accumulation_steps}).",
                 stacklevel=2,
             )
+        if not 0.0 <= self.ema_decay < 1.0:
+            raise ValueError(f"ema_decay must satisfy 0 <= decay < 1, got {self.ema_decay}")
+        if self.ema_update_after_step < 0:
+            raise ValueError("ema_update_after_step must be >= 0")
+        if self.ema_update_every < 1:
+            raise ValueError("ema_update_every must be >= 1")
 
 
 def check_resume_compatibility(training: TrainingConfig) -> None:

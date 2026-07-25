@@ -80,6 +80,7 @@ if __name__ == "__main__":
     config.model.tune_projector = ft_config.tune_projector
     config.model.tune_diffusion_model = ft_config.tune_diffusion_model
     config.model.state_dropout_prob = ft_config.state_dropout_prob
+    config.model.processor_state_dropout_prob = ft_config.processor_state_dropout_prob
     config.model.random_rotation_angle = ft_config.random_rotation_angle
     config.model.color_jitter_params = ft_config.color_jitter_params
     config.model.use_percentiles = ft_config.use_percentiles
@@ -107,6 +108,7 @@ if __name__ == "__main__":
     config.training.global_batch_size = ft_config.global_batch_size
     config.training.dataloader_num_workers = ft_config.dataloader_num_workers
     config.training.learning_rate = ft_config.learning_rate
+    config.training.lr_scheduler_type = ft_config.lr_scheduler_type
     config.training.gradient_accumulation_steps = ft_config.gradient_accumulation_steps
     config.training.output_dir = ft_config.output_dir
     config.training.save_steps = ft_config.save_steps
@@ -116,6 +118,10 @@ if __name__ == "__main__":
     config.training.max_steps = ft_config.max_steps
     config.training.weight_decay = ft_config.weight_decay
     config.training.warmup_ratio = ft_config.warmup_ratio
+    config.training.use_ema = ft_config.use_ema
+    config.training.ema_decay = ft_config.ema_decay
+    config.training.ema_update_after_step = ft_config.ema_update_after_step
+    config.training.ema_update_every = ft_config.ema_update_every
     config.training.wandb_project = ft_config.wandb_project
 
     config.data.shard_size = ft_config.shard_size

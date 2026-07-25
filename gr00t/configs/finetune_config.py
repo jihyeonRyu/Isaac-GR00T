@@ -60,8 +60,26 @@ class FinetuneConfig:
 
     state_dropout_prob: float = 0.2
     """
-    Dropout probability applied to state inputs for regularization during training.
+    Dropout probability applied once to encoded state features in the action head.
     """
+
+    processor_state_dropout_prob: float = 0.0
+    """
+    Optional independent dropout applied to normalized raw state in the processor.
+    Keep this at 0.0 unless deliberately testing stacked state dropout.
+    """
+
+    use_ema: bool = False
+    """Track an EMA of trainable parameters and export a final EMA checkpoint."""
+
+    ema_decay: float = 0.999
+    """EMA decay applied after each optimizer step."""
+
+    ema_update_after_step: int = 0
+    """Keep EMA synchronized to live weights until this optimizer step."""
+
+    ema_update_every: int = 1
+    """Update EMA every N optimizer steps."""
 
     # --- Data Augmentation ---
     random_rotation_angle: int | None = None
@@ -130,6 +148,9 @@ class FinetuneConfig:
 
     learning_rate: float = 1e-4
     """Initial learning rate for optimizer."""
+
+    lr_scheduler_type: str = "cosine"
+    """Hugging Face learning-rate scheduler name."""
 
     gradient_accumulation_steps: int = 1
     """Forward passes per optimizer step. Multiplies ``global_batch_size`` to

@@ -178,7 +178,7 @@ class Gr00tN1d7Pipeline(ModelPipeline):
                 use_relative_action=self.model_config.use_relative_action,
                 # State augmentation overrides
                 exclude_state=self.model_config.exclude_state,
-                state_dropout_prob=self.model_config.state_dropout_prob,
+                state_dropout_prob=self.model_config.processor_state_dropout_prob,
                 use_mean_std=self.model_config.use_mean_std,
                 **self.transformers_loading_kwargs,
             )
@@ -207,7 +207,7 @@ class Gr00tN1d7Pipeline(ModelPipeline):
                 use_relative_action=self.model_config.use_relative_action,
                 # State augmentation
                 exclude_state=self.model_config.exclude_state,
-                state_dropout_prob=self.model_config.state_dropout_prob,
+                state_dropout_prob=self.model_config.processor_state_dropout_prob,
                 use_mean_std=self.model_config.use_mean_std,
                 transformers_loading_kwargs=self.transformers_loading_kwargs,
             )

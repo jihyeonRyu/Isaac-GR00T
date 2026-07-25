@@ -48,6 +48,84 @@ class ProfCallback(TrainerCallback):
         self.prof.step()
 
 
+class TrainableModelEmaCallback(TrainerCallback):
+    """FP32 EMA over trainable parameters, updated after optimizer steps.
+
+    ZeRO-2 shards optimizer state and gradients but keeps parameters replicated,
+    so every rank can maintain the same local EMA without collectives.
+    """
+
+    def __init__(
+        self,
+        decay: float = 0.999,
+        update_after_step: int = 0,
+        update_every: int = 1,
+    ):
+        self.decay = float(decay)
+        self.update_after_step = int(update_after_step)
+        self.update_every = int(update_every)
+        self.params: list[torch.nn.Parameter] = []
+        self.shadows: list[torch.Tensor] = []
+        self.backup: list[torch.Tensor] | None = None
+        self.num_updates = 0
+
+    @torch.no_grad()
+    def on_train_begin(self, args, state, control, model=None, **kwargs):
+        if model is None:
+            raise RuntimeError("EMA callback requires the training model")
+        self.params = [param for param in model.parameters() if param.requires_grad]
+        if not self.params:
+            raise RuntimeError("EMA requested but the model has no trainable parameters")
+        self.shadows = [param.detach().float().clone() for param in self.params]
+        self.backup = None
+        self.num_updates = 0
+        logging.info(
+            "Initialized FP32 EMA for %d trainable tensors (%d parameters), decay=%s",
+            len(self.params),
+            sum(param.numel() for param in self.params),
+            self.decay,
+        )
+
+    @torch.no_grad()
+    def on_step_end(self, args, state, control, **kwargs):
+        step = int(state.global_step)
+        if step <= self.update_after_step:
+            for shadow, param in zip(self.shadows, self.params):
+                shadow.copy_(param.detach(), non_blocking=True)
+            return
+        if (step - self.update_after_step) % self.update_every != 0:
+            return
+
+        groups: dict[tuple[torch.device, torch.dtype], tuple[list, list]] = {}
+        for shadow, param in zip(self.shadows, self.params):
+            key = (param.device, param.dtype)
+            shadows, params = groups.setdefault(key, ([], []))
+            shadows.append(shadow)
+            params.append(param.detach())
+        for shadows, params in groups.values():
+            torch._foreach_mul_(shadows, self.decay)
+            torch._foreach_add_(shadows, params, alpha=1.0 - self.decay)
+        self.num_updates += 1
+
+    @torch.no_grad()
+    def swap_in(self):
+        if not self.shadows:
+            raise RuntimeError("EMA has not been initialized")
+        if self.backup is not None:
+            raise RuntimeError("EMA weights are already active")
+        self.backup = [param.detach().clone() for param in self.params]
+        for param, shadow in zip(self.params, self.shadows):
+            param.copy_(shadow, non_blocking=True)
+
+    @torch.no_grad()
+    def restore(self):
+        if self.backup is None:
+            raise RuntimeError("EMA weights are not active")
+        for param, raw in zip(self.params, self.backup):
+            param.copy_(raw, non_blocking=True)
+        self.backup = None
+
+
 class _BatchIterator:
     """Lightweight iterator that yields pre-collated batches."""
 
@@ -164,7 +242,34 @@ class Gr00tTrainer(Trainer):
         """
         self.action_offset = kwargs.pop("action_offset", None)
         self.multiprocessing_context = kwargs.pop("multiprocessing_context", "fork")
+        self.ema_callback: TrainableModelEmaCallback | None = None
         super().__init__(*args, **kwargs)
+
+    def enable_ema(
+        self,
+        *,
+        decay: float,
+        update_after_step: int = 0,
+        update_every: int = 1,
+    ) -> None:
+        if self.ema_callback is not None:
+            raise RuntimeError("EMA is already enabled")
+        self.ema_callback = TrainableModelEmaCallback(
+            decay=decay,
+            update_after_step=update_after_step,
+            update_every=update_every,
+        )
+        self.add_callback(self.ema_callback)
+
+    def save_ema_model(self, output_dir: str) -> None:
+        """Collectively save an inference-ready model with EMA weights."""
+        if self.ema_callback is None:
+            raise RuntimeError("EMA is not enabled")
+        self.ema_callback.swap_in()
+        try:
+            self.save_model(output_dir)
+        finally:
+            self.ema_callback.restore()
 
     def log(self, logs: dict[str, float], start_time: Optional[float] = None) -> None:
         # Hide epoch from logged metrics as it's misleading for Iterable datasets.

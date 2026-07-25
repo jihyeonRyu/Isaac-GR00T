@@ -19,6 +19,7 @@ import json
 import logging
 import os
 from pathlib import Path
+import shutil
 import warnings
 
 from omegaconf import OmegaConf
@@ -311,6 +312,12 @@ def run(config: Config):
         data_collator=data_collator,
         multiprocessing_context=config.data.multiprocessing_context,
     )
+    if config.training.use_ema:
+        trainer.enable_ema(
+            decay=config.training.ema_decay,
+            update_after_step=config.training.ema_update_after_step,
+            update_every=config.training.ema_update_every,
+        )
 
     trainer.add_callback(
         CheckpointFormatCallback(
@@ -369,6 +376,30 @@ def run(config: Config):
     # Save final model
     trainer.save_model()
     logging.info(f"Model saved to {output_dir}")
+    if config.training.use_ema:
+        ema_output_dir = output_dir / f"checkpoint-{trainer.state.global_step}-ema"
+        trainer.save_ema_model(str(ema_output_dir))
+        with run_or_wait_on_rank0(label="EMA checkpoint metadata copy") as is_rank0:
+            if is_rank0:
+                shutil.copytree(
+                    save_cfg_dir,
+                    ema_output_dir / save_cfg_dir.name,
+                    dirs_exist_ok=True,
+                )
+                shutil.copytree(processor_dir, ema_output_dir, dirs_exist_ok=True)
+                with open(ema_output_dir / "ema_config.json", "w") as f:
+                    json.dump(
+                        {
+                            "decay": config.training.ema_decay,
+                            "update_after_step": config.training.ema_update_after_step,
+                            "update_every": config.training.ema_update_every,
+                            "num_updates": trainer.ema_callback.num_updates,
+                            "source_step": trainer.state.global_step,
+                        },
+                        f,
+                        indent=2,
+                    )
+        logging.info(f"EMA model saved to {ema_output_dir}")
 
     if config.training.assert_loss_less_than is not None:
         final_loss = trainer.loss
