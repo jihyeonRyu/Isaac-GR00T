@@ -31,8 +31,9 @@ EMA_UPDATE_AFTER_STEP="${EMA_UPDATE_AFTER_STEP:-0}"
 EMA_UPDATE_EVERY="${EMA_UPDATE_EVERY:-1}"
 DATALOADER_NUM_WORKERS="${DATALOADER_NUM_WORKERS:-2}"
 SHARD_SIZE="${SHARD_SIZE:-512}"
-NUM_SHARDS_PER_EPOCH="${NUM_SHARDS_PER_EPOCH:-100000}"
-EPISODE_SAMPLING_RATE="${EPISODE_SAMPLING_RATE:-1.0}"
+NUM_SHARDS_PER_EPOCH="${NUM_SHARDS_PER_EPOCH:-auto}"
+EPISODE_SAMPLING_RATE="${EPISODE_SAMPLING_RATE:-0.1}"
+ACTION_HORIZON="${ACTION_HORIZON:-40}"
 USE_WANDB="${USE_WANDB:-1}"
 WANDB_MODE="${WANDB_MODE:-online}"
 TUNE_LLM="${TUNE_LLM:-0}"
@@ -118,6 +119,35 @@ echo "  automatic offline W&B attention probe: ${DEBUG_VISUALIZE}"
 
 cd "${REPO_ROOT}"
 RUN_DIR="${OUTPUT_DIR}/${EXPERIMENT_NAME}"
+mkdir -p "${RUN_DIR}"
+COVERAGE_AUDIT_PATH="${RUN_DIR}/frame_coverage_audit.json"
+IFS=$'\t' read -r \
+    VALID_TRAINING_WINDOWS \
+    EXHAUSTIVE_SHARDS_PER_EPOCH \
+    MINIMUM_STEPS_FOR_ONE_PASS \
+    COMPLETE_NOMINAL_DATA_PASSES \
+    NOMINAL_DATA_PASSES < <(
+        "${VENV_PATH}/bin/python" tools/audit_franka_training_coverage.py \
+            --episodes "${DATASET_PATH}/meta/episodes.jsonl" \
+            --action-horizon "${ACTION_HORIZON}" \
+            --shard-size "${SHARD_SIZE}" \
+            --episode-sampling-rate "${EPISODE_SAMPLING_RATE}" \
+            --global-batch-size "${GLOBAL_BATCH_SIZE}" \
+            --max-steps "${MAX_STEPS}" \
+            --output "${COVERAGE_AUDIT_PATH}" \
+            --format tsv
+    )
+if [ "${NUM_SHARDS_PER_EPOCH}" = "auto" ]; then
+    NUM_SHARDS_PER_EPOCH="${EXHAUSTIVE_SHARDS_PER_EPOCH}"
+fi
+if ! [[ "${NUM_SHARDS_PER_EPOCH}" =~ ^[1-9][0-9]*$ ]]; then
+    echo "NUM_SHARDS_PER_EPOCH must be 'auto' or a positive integer" >&2
+    exit 4
+fi
+echo "  frame coverage: ${VALID_TRAINING_WINDOWS} windows; ${MINIMUM_STEPS_FOR_ONE_PASS} steps/pass"
+echo "  complete/nominal data passes: ${COMPLETE_NOMINAL_DATA_PASSES}/${NOMINAL_DATA_PASSES}"
+echo "  balanced shards/exhaustive epoch: ${SHARD_SIZE}/${NUM_SHARDS_PER_EPOCH}"
+echo "  episode split rate/action horizon: ${EPISODE_SAMPLING_RATE}/${ACTION_HORIZON}"
 DEBUG_WATCHER_PID=""
 DEBUG_STOP_FILE="/tmp/franka_attention_watcher_$$.stop"
 
