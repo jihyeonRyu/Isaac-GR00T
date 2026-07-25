@@ -82,6 +82,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--episode-sampling-rate", type=float, default=0.1)
     parser.add_argument("--global-batch-size", type=int, required=True)
     parser.add_argument("--max-steps", type=int, required=True)
+    parser.add_argument(
+        "--allow-incomplete-pass",
+        action="store_true",
+        help=(
+            "Report coverage even when max_steps is below one nominal data pass. "
+            "Use only for deriving a training budget; final audits should omit this flag."
+        ),
+    )
     parser.add_argument("--output", type=Path)
     parser.add_argument("--format", choices=("json", "tsv"), default="json")
     return parser.parse_args()
@@ -97,7 +105,10 @@ def main() -> int:
         global_batch_size=args.global_batch_size,
         max_steps=args.max_steps,
     )
-    if result["sample_budget"] < result["valid_training_windows"]:
+    if (
+        not args.allow_incomplete_pass
+        and result["sample_budget"] < result["valid_training_windows"]
+    ):
         raise ValueError(
             "training budget does not cover one frame-level data pass: "
             f"increase max_steps to at least {result['minimum_steps_for_one_pass']}"
